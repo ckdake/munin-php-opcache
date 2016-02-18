@@ -1,0 +1,129 @@
+#!/usr/bin/perl
+#
+# Magic markers:
+#%# family=auto
+#%# capabilities=autoconf
+
+use strict;
+use Munin::Plugin;
+
+need_multigraph();
+
+my $ret = undef;
+
+if (! eval "require LWP::UserAgent;")
+{
+	$ret = "LWP::UserAgent not found";
+}
+
+my $URL = exists $ENV{'url'} ? $ENV{'url'} : "http://127.0.0.1:%d/opcache_info.php?auto";
+my @PORTS = exists $ENV{'ports'} ? split(' ', $ENV{'ports'}) : (80);
+
+if ( defined $ARGV[0] and $ARGV[0] eq "autoconf" )
+{
+	if ($ret)
+	{
+		print "no ($ret)\n";
+		exit 1;
+	}
+
+	my $ua = LWP::UserAgent->new(timeout => 30);
+
+	my @badports;
+	foreach my $port (@PORTS) {
+		my $url = sprintf $URL, $port;
+		my $response = $ua->request(HTTP::Request->new('GET',$url));
+		push @badports, $port unless $response->is_success and $response->content =~ /^size: /im;
+	}
+	if (@badports) {
+		print "no (opcache-status)\n";
+		exit 1;
+	} else {
+		print "yes\n";
+		exit 0;
+	}
+}
+
+if ( defined $ARGV[0] and $ARGV[0] eq "config" )
+{
+
+$0 =~ /php_opcache([^_]+)?_(.+)*/;
+my $custom_name = $1;
+my $plugin = $2;
+
+## PHP Opcache Cache Usage
+if($plugin eq 'usage') {
+print("multigraph php_opcache$custom_name\_usage
+graph_title Cache Usage $custom_name
+graph_args --base 1024 -l 0
+graph_vlabel Bytes
+graph_category php-opcache
+graph_order used free
+graph_total Total
+used.label Used Memory
+used.draw AREASTACK
+free.label Available Memory
+free.draw AREASTACK
+");
+}
+
+## PHP Opcache Hit / Miss by percentage
+elsif($plugin eq 'hit_miss') {
+print("multigraph php_opcache$custom_name\_hit_miss
+graph_title Opcode Cache Hits / Misses $custom_name
+graph_args --base 1000 --lower-limit 0 --upper-limit 100 --rigid
+graph_vlabel Percent
+graph_category php-opcache
+graph_total Total
+hits.label Hits
+hits.draw AREA
+hits.min 0
+misses.label Misses
+misses.draw STACK
+misses.min 0
+misses.warning 50
+");
+}
+
+
+exit 0;
+}
+
+foreach my $port (@PORTS)
+{
+    my $ua = LWP::UserAgent->new(timeout => 30);
+    my $url = sprintf $URL, $port;
+    my $response = $ua->request(HTTP::Request->new('GET',$url));
+    
+    if ($response->content =~ /size:\s+([0-9\.]+)/im) {
+        print "size.value $1\n";
+    } else {
+        print "size.value U\n";
+    }
+
+    if ($response->content =~ /used:\s+([0-9\.]+)/im) {
+        print "used.value $1\n";
+    } else {
+        print "used.value U\n";
+    }
+
+    if ($response->content =~ /free:\s+([0-9\.]+)/im) {
+            print "free.value $1\n";
+    } else {
+            print "free.value U\n";
+    }
+	
+    if ($response->content =~ /hits:\s+([0-9\.]+)/im) {
+            print "hits.value $1\n";
+    } else {
+            print "hits.value U\n";
+    }
+    
+if ($response->content =~ /free:\s+([0-9\.]+)/im) {
+            print "misses.value $1\n";
+    } else {
+            print "misses.value U\n";
+    }
+}
+
+# vim:syntax=perl
